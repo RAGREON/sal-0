@@ -1,15 +1,11 @@
 const fs = require("fs");
 const path = require("path");
-const {
-	Client,
-	Events,
-	GatewayIntentBits,
-	MessageFlags,
-	Collection,
-} = require("discord.js");
+const { Client, Events, GatewayIntentBits, Collection } = require("discord.js");
 const { token } = require("./config.json");
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+	intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+});
 
 client.once(Events.ClientReady, (readyClient) => {
 	console.log("client is ready");
@@ -31,7 +27,7 @@ for (const folder of commandsFolder) {
 		const command = require(filePath);
 
 		if ("data" in command && "execute" in command) {
-			client.commands.set(command.data.name, command)
+			client.commands.set(command.data.name, command);
 		} else {
 			console.log(
 				`[WARNING]: The command at ${filePath} is missing "name" or "execute" or both.`
@@ -40,33 +36,20 @@ for (const folder of commandsFolder) {
 	}
 }
 
-client.on(Events.InteractionCreate, async (interaction) => {
-	if (!interaction.isChatInputCommand()) return;
+const eventsPath = path.join(__dirname, "events");
+const eventFiles = fs
+	.readdirSync(eventsPath)
+	.filter((file) => file.endsWith(".js"));
 
-	const command = interaction.client.commands.get(interaction.commandName);
-	if (!command) {
-		console.log(`[NOT FOUND]: ${interaction.commandName}, command not found.`);
-		return;
+for (const file of eventFiles) {
+	const filePath = path.join(eventsPath, file);
+	const event = require(filePath);
+
+	if (event.once) {
+		client.once(event.name, (...args) => event.execute(...args));
+	} else {
+		client.on(event.name, (...args) => event.execute(...args));
 	}
-
-	try {
-		await command.execute(interaction);
-	} catch (err) {
-		console.error(
-			`[ERROR]: ${interaction.commandName}, failed to execute\n${err}`
-		);
-		if (interaction.replied || interaction.deferred) {
-			await interaction.followUp({
-				content: "There was an error executing the command",
-				flags: MessageFlags.Ephemeral,
-			});
-		} else {
-			await interaction.reply({
-				content: "There was an error executing the command",
-				flags: MessageFlags.Ephemeral,
-			});
-		}
-  }
-});
+}
 
 client.login(token);
