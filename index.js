@@ -1,10 +1,72 @@
-const { Client, Events, GatewayIntentBits } = require('discord.js')
-const { token } = require('./config.json')
+const fs = require("fs");
+const path = require("path");
+const {
+	Client,
+	Events,
+	GatewayIntentBits,
+	MessageFlags,
+	Collection,
+} = require("discord.js");
+const { token } = require("./config.json");
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] })
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.once(Events.ClientReady, (readyClient) => {
-  console.log('client is ready')
-})
+	console.log("client is ready");
+});
 
-client.login(token)
+client.commands = new Collection();
+
+const foldersPath = path.join(__dirname, "commands");
+const commandsFolder = fs.readdirSync(foldersPath);
+
+for (const folder of commandsFolder) {
+	const commandsPath = path.join(foldersPath, folder);
+	const commandFiles = fs
+		.readdirSync(commandsPath)
+		.filter((file) => file.endsWith(".js"));
+
+	for (const file of commandFiles) {
+		const filePath = path.join(commandsPath, file);
+		const command = require(filePath);
+
+		if ("data" in command && "execute" in command) {
+			client.commands.set(command.data.name, command)
+		} else {
+			console.log(
+				`[WARNING]: The command at ${filePath} is missing "name" or "execute" or both.`
+			);
+		}
+	}
+}
+
+client.on(Events.InteractionCreate, async (interaction) => {
+	if (!interaction.isChatInputCommand()) return;
+
+	const command = interaction.client.commands.get(interaction.commandName);
+	if (!command) {
+		console.log(`[NOT FOUND]: ${interaction.commandName}, command not found.`);
+		return;
+	}
+
+	try {
+		await command.execute(interaction);
+	} catch (err) {
+		console.error(
+			`[ERROR]: ${interaction.commandName}, failed to execute\n${err}`
+		);
+		if (interaction.replied || interaction.deferred) {
+			await interaction.followUp({
+				content: "There was an error executing the command",
+				flags: MessageFlags.Ephemeral,
+			});
+		} else {
+			await interaction.reply({
+				content: "There was an error executing the command",
+				flags: MessageFlags.Ephemeral,
+			});
+		}
+  }
+});
+
+client.login(token);
